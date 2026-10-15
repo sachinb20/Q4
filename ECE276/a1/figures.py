@@ -1,4 +1,4 @@
-"""Q1 (arm with body-fixed frames) and Q4 (control block diagrams) figures."""
+"""Report figures and representative frames extracted from the Q5/Q6 GIFs."""
 import os
 
 import matplotlib
@@ -6,8 +6,9 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Arc, FancyBboxPatch
+from PIL import Image
 
-from arm import L, joint_points
+from arm import joint_points
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'results')
 
@@ -37,7 +38,7 @@ def q1_figure():
     q = np.radians([30., 50., -45.])
     pts = joint_points(q)
     c = np.cumsum(q)
-    fig, ax = plt.subplots(figsize=(9, 7.5))
+    fig, ax = plt.subplots(figsize=(8, 6))
     ax.plot(pts[:, 0], pts[:, 1], '-', color='0.35', lw=7, solid_capstyle='round', alpha=0.35, zorder=1)
     ax.plot(pts[:-1, 0], pts[:-1, 1], 'ko', ms=7, zorder=2)
     ax.plot(*pts[-1], 's', color='tab:green', ms=9, zorder=2)
@@ -47,7 +48,7 @@ def q1_figure():
     frame(ax, [0, 0], 0., '0', length=0.22)
     frame(ax, pts[0], c[0], '1')
     frame(ax, pts[1], c[1], '2')
-    frame(ax, pts[2], c[2], '3')
+    frame(ax, pts[2], c[2], '3', length=0.11)
     frame(ax, pts[3], c[2], 'ee', length=0.12)
 
     # joint angles: measured from the previous x axis (dashed extension) to the new one
@@ -63,18 +64,14 @@ def q1_figure():
         nrm = np.array([-np.sin(c[i]), np.cos(c[i])])
         ax.text(*(m - 0.06 * nrm), f'$l_{i + 1}$', fontsize=14, ha='center', va='center', color='0.2')
 
-    ax.text(0.40, 0.03, r'All $z_i$ axes point out of the page ($\odot$), parallel to the joint axes;'
-            '\n' r'gravity acts along $-z$. Arm moves in the $x_0y_0$ plane.'
-            '\n' r'Frame $\{i\}$ is attached to link $i$ at joint $i$ ($x_i$ along link $i$);'
-            '\n' r'$\{ee\}$ is at the tip, $a_3=l_3$ along $x_3$ (Table 1, modified D-H).',
-            transform=ax.transAxes, va='bottom', fontsize=10,
-            bbox=dict(fc='w', ec='0.7'))
+    ax.text(0.98, 0.02, r'$\odot$: all $z_i$ out of the page; gravity along $-z_0$.',
+            transform=ax.transAxes, ha='right', fontsize=10)
     ax.set_aspect('equal')
-    ax.set_xlim(-0.25, 1.15)
-    ax.set_ylim(-0.15, 1.08)
+    ax.set_xlim(-0.23, 1.02)
+    ax.set_ylim(-0.13, 1.02)
     ax.set_xlabel('x [m]')
     ax.set_ylabel('y [m]')
-    ax.set_title(r'Q1: three-link planar arm with body-fixed frames ($\theta$ = 30°, 50°, −45°)')
+    ax.set_title('Three-link planar arm and body-fixed frames')
     ax.grid(alpha=0.2)
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, 'q1_frames.png'), dpi=140)
@@ -112,78 +109,66 @@ def poly(ax, pts, end_arrow=True):
 
 
 def q4_figure():
-    fig, (a1, a2) = plt.subplots(2, 1, figsize=(15, 9.5), gridspec_kw=dict(height_ratios=[1, 1.6]))
+    """Full-pose setpoint control, following Lecture 4 slides 10 and 14."""
+    fig, (a1, a2) = plt.subplots(2, 1, figsize=(12, 4.7))
     for ax in (a1, a2):
+        ax.set_xlim(-0.2, 13.5)
         ax.set_aspect('equal')
         ax.axis('off')
 
-    # --- open loop
-    a1.set_xlim(-0.3, 15.2)
-    a1.set_ylim(-0.9, 1.0)
-    a1.set_title('(a) Open-loop control (no end-effector feedback)', fontsize=12, loc='left')
-    b1 = box(a1, (1.9, 0), 'Trajectory generator\n2nd-order profile s(t)')
-    b2 = box(a1, (5.0, 0), 'Inverse kinematics\n' r'$q_d=\mathrm{IK}(x_d,y_d,\theta_d)$', w=2.0)
-    b3 = box(a1, (8.3, 0), 'Joint servos\n(PyBullet motors)')
-    b4 = box(a1, (11.1, 0), 'Robot arm\n(3-link)', w=1.4)
-    b5 = box(a1, (13.9, 0), 'Forward\nkinematics', w=1.4, fc='#f2f2f2')
-    arrow(a1, (-0.3, 0), b1['l'], r'$\{x,y,\theta\}_{ref}$', off=(0.0, 0.18))
-    a1.text(-0.3, -0.35, r'(setpoint list)', fontsize=9)
-    arrow(a1, b1['r'], b2['l'], r'$\{x,y,\theta\}_d(t)$', off=(0, 0.18))
-    arrow(a1, b2['r'], b3['l'], r'$q_d(t),\ \dot q_d(t)$', off=(0, 0.18))
-    arrow(a1, b3['r'], b4['l'], r'$\tau$', off=(0, 0.12))
-    arrow(a1, b4['r'], b5['l'], r'$q$', off=(0, 0.12))
-    a1.text(13.9, -0.65, r'$\{x,y,\theta\}$ (output, not fed back)', ha='center', fontsize=10)
+    a1.set_ylim(-0.8, 1.)
+    a1.set_title('(a) Open-loop setpoint control', fontsize=12, loc='left')
+    inv = box(a1, (3., 0.), 'Inverse\nkinematics', w=2.)
+    act = box(a1, (6.8, 0.), 'Actuator\ncontrol loop', w=2.)
+    rob = box(a1, (10.5, 0.), 'Robot\n' r'$\mathbf{x}=f(\mathbf{q})$', w=2.)
+    arrow(a1, (0., 0.), inv['l'], r'$\mathbf{x}_{ref}$')
+    arrow(a1, inv['r'], act['l'], r'$\mathbf{q}_{ref}$')
+    arrow(a1, act['r'], rob['l'], r'$\mathbf{q}$')
+    arrow(a1, rob['r'], (13., 0.), r'$\mathbf{x}$')
 
-    # --- closed loop
-    a2.set_xlim(-0.3, 15.2)
-    a2.set_ylim(-3.3, 1.9)
-    a2.set_title('(b) Closed-loop resolved-rate control with nullspace term', fontsize=12, loc='left')
-    y0 = 0.6
-    g = box(a2, (1.9, y0), 'Trajectory generator\n2nd-order profile s(t)')
-    arrow(a2, (-0.3, y0), g['l'], r'$\{x,y\}_{ref}$', off=(0, 0.18))
-    s1 = summer(a2, (3.9, y0))
-    arrow(a2, g['r'], s1['l'], r'$p_d$', off=(0, 0.14), sign='+')
-    k = box(a2, (5.3, y0), r'$K_p$', w=0.9)
-    arrow(a2, s1['r'], k['l'], r'$e$', off=(0, 0.12))
-    s2 = summer(a2, (6.6, y0))
-    arrow(a2, k['r'], s2['l'], sign='+')
-    # feed-forward velocity
-    poly(a2, [(1.9, y0 + 0.4), (1.9, 1.45), (6.6, 1.45), s2['t']])
-    a2.text(4.2, 1.55, r'$\dot p_d$ (feed-forward)', ha='center', fontsize=10)
-    a2.text(6.38, y0 + 0.28, '+', fontsize=11)
-    jp = box(a2, (8.0, y0), r'$J^{+}(q)$' '\n' r'(damped pinv)', w=1.5)
-    arrow(a2, s2['r'], jp['l'], r'$\dot p_{cmd}$', off=(0.05, -0.33))
-    s3 = summer(a2, (9.5, y0))
-    arrow(a2, jp['r'], s3['l'], sign='+')
-    rob = box(a2, (11.4, y0), 'Joint velocity\nservos + robot', w=1.8)
-    arrow(a2, s3['r'], rob['l'], r'$\dot q$', off=(0, 0.14))
-    fk_b = box(a2, (13.9, y0), 'Forward\nkinematics', w=1.4)
-    arrow(a2, rob['r'], fk_b['l'], r'$q$', off=(0, 0.12))
-    poly(a2, [fk_b['r'], (15.0, y0)], end_arrow=True)
-    a2.text(15.0, y0 + 0.15, r'$p$', fontsize=11)
-    # position feedback
-    poly(a2, [(14.9, y0), (14.9, -2.85), (3.9, -2.85), s1['b']])
-    a2.text(9.0, -3.1, r'measured end-effector position $p=[x,y]$', ha='center', fontsize=10)
-    a2.text(3.65, y0 - 0.45, '−', fontsize=13)
-    # nullspace branch
-    h = box(a2, (8.0, -1.0), r'$\nabla H(q)$, $H=-\frac{1}{2}(\theta_2^2+\theta_3^2)$' '\n'
-            '(maximise inter-link angles)', w=3.4, fc='#fdf1e3')
-    n = box(a2, (8.0, -2.05), r'$(I-J^{+}J)\,k_0$', w=1.9, fc='#fdf1e3')
-    poly(a2, [(12.4, y0 - 0.4), (12.4, -1.0), (h['r'][0], -1.0)])
-    a2.text(12.55, -0.6, r'$q$', fontsize=11)
-    arrow(a2, h['b'], n['t'])
-    poly(a2, [n['r'], (9.5, -2.05), s3['b']])
-    a2.text(9.6, y0 - 0.45, '+', fontsize=11)
-    a2.text(9.65, -1.6, r'$\dot q_0$', fontsize=10)
-    a2.text(0.0, -1.6, r'$\dot q = J^{+}(\dot p_d + K_p(p_d-p)) + (I-J^{+}J)\,k_0\nabla H(q)$',
-            fontsize=12)
-    a2.text(0.0, -2.1, r'$J=\partial[x,y]/\partial q\ \in\mathbb{R}^{2\times3}$', fontsize=11)
-    fig.tight_layout()
-    fig.savefig(os.path.join(OUT, 'q4_block_diagrams.png'), dpi=130)
+    a2.set_ylim(-1.65, 1.)
+    a2.set_title('(b) Closed-loop setpoint control', fontsize=12, loc='left')
+    summ = summer(a2, (1.65, 0.))
+    gain = box(a2, (3.25, 0.), r'$K$', w=1.2)
+    pinv = box(a2, (5.5, 0.), r'$J^\dagger(\mathbf{q})$', w=1.4)
+    act = box(a2, (8.15, 0.), 'Actuator\ncontrol loop', w=1.7)
+    rob = box(a2, (10.95, 0.), 'Robot\n' r'$\mathbf{x}=f(\mathbf{q})$', w=1.7)
+    arrow(a2, (0., 0.), summ['l'], r'$\mathbf{x}_{ref}$', sign='+')
+    arrow(a2, summ['r'], gain['l'], r'$\mathbf{e}$')
+    arrow(a2, gain['r'], pinv['l'], r'$\delta\mathbf{x}$')
+    arrow(a2, pinv['r'], act['l'], r'$\delta\mathbf{q}$')
+    arrow(a2, act['r'], rob['l'], r'$\mathbf{q}$')
+    arrow(a2, rob['r'], (13., 0.), r'$\mathbf{x}$')
+    sensor = box(a2, (7.7, -1.2), 'Sensor', w=1.5, h=0.5, fc='#f2f2f2')
+    poly(a2, [(12.5, 0.), (12.5, -1.2), sensor['r']])
+    poly(a2, [sensor['l'], (1.65, -1.2), summ['b']])
+    a2.text(1.38, -0.4, '−', fontsize=13)
+    a2.text(3.5, -1.05, r'$\mathbf{x}_{meas}$', fontsize=10)
+    fig.tight_layout(h_pad=1.5)
+    fig.savefig(os.path.join(OUT, 'q4_block_diagrams.png'), dpi=160)
     plt.close(fig)
+
+
+def animation_snapshots():
+    """Extract the actual GIF frames at the three intermediate waypoints."""
+    times_ms = [2500, 5000, 7500]
+    for stem in ['q5_open_loop', 'q6_closed_loop']:
+        with Image.open(os.path.join(OUT, stem + '.gif')) as gif:
+            elapsed_ms = 0
+            target = 0
+            for index in range(gif.n_frames):
+                gif.seek(index)
+                duration_ms = gif.info['duration']
+                if elapsed_ms <= times_ms[target] < elapsed_ms + duration_ms:
+                    gif.convert('RGB').save(os.path.join(OUT, f'{stem}_frame{target + 1}.png'))
+                    target += 1
+                    if target == len(times_ms):
+                        break
+                elapsed_ms += duration_ms
 
 
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
     q1_figure()
     q4_figure()
+    animation_snapshots()

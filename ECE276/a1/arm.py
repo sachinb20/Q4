@@ -5,7 +5,7 @@ L = np.array([0.5, 0.5, 0.2])
 
 
 def wrap(a):
-    """Wrap angle(s) to (-pi, pi]."""
+    """Wrap angle(s) to [-pi, pi)."""
     return (np.asarray(a) + np.pi) % (2 * np.pi) - np.pi
 
 
@@ -47,6 +47,8 @@ def ik(pose, elbow=1.0, q_near=None, L=L):
     x, y, th = pose
     xw, yw = x - L[2] * np.cos(th), y - L[2] * np.sin(th)
     c2 = (xw**2 + yw**2 - L[0]**2 - L[1]**2) / (2 * L[0] * L[1])
+    if abs(c2) > 1.0 + 1e-10:
+        raise ValueError(f'Unreachable end-effector pose: {pose}')
     q2 = elbow * np.arccos(np.clip(c2, -1.0, 1.0))
     q1 = np.arctan2(yw, xw) - np.arctan2(L[1] * np.sin(q2), L[0] + L[1] * np.cos(q2))
     q = np.array([q1, q2, th - q1 - q2])
@@ -55,6 +57,15 @@ def ik(pose, elbow=1.0, q_near=None, L=L):
     return q
 
 
-def dls_pinv(J, lam=1e-2):
-    """Damped least-squares pseudo-inverse J^T (J J^T + lam^2 I)^-1."""
-    return J.T @ np.linalg.inv(J @ J.T + lam**2 * np.eye(J.shape[0]))
+def pinv_and_null(J):
+    """SVD pseudoinverse and orthogonal nullspace projector (Lecture 4.5).
+
+    Damping must not be used in I - J^dagger J: it would leak the secondary
+    motion into the Cartesian task. Retain all nonzero singular values.
+    """
+    u, s, vt = np.linalg.svd(J, full_matrices=True)
+    tol = np.finfo(float).eps * max(J.shape) * s[0]
+    rank = int(np.count_nonzero(s > tol))
+    J_dagger = (vt[:rank].T / s[:rank]) @ u[:, :rank].T
+    basis = vt[rank:].T
+    return J_dagger, basis @ basis.T

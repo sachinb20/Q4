@@ -1,6 +1,6 @@
 """ECE276C Assignment 1 -- Robot Kinematics and Simple Control.
 
-Usage (conda env q4):
+Usage (Python with numpy, matplotlib, pybullet, imageio and Pillow):
     python a1_solution.py            # run Q3, Q5, Q6 headless, write results/
     python a1_solution.py --part 5   # one part only
     python a1_solution.py --gui      # also open the PyBullet GUI while simulating
@@ -17,7 +17,7 @@ import pybullet as p
 import pybullet_data
 from PIL import Image, ImageDraw, ImageFont
 
-from arm import L, dls_pinv, fk, ik, jacobian, joint_points, wrap
+from arm import fk, ik, jacobian, pinv_and_null, wrap
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, 'results')
@@ -115,8 +115,8 @@ class TopCamera:
 # ----------------------------------------------------------------------------- Q3
 def part3(gui=False):
     robot, joints, ee = make_sim(gui)
-    cam = TopCamera(center=[0.25, 0.25], half_height=1.05)
-    fig, axes = plt.subplots(2, 2, figsize=(10, 10))
+    cam = TopCamera(center=[0.25, 0.32], half_height=0.68, size=(700, 450))
+    fig, axes = plt.subplots(2, 2, figsize=(10, 6.8))
     print('\nQ3: FK check (analytic vs PyBullet)')
     for k, (q, ax) in enumerate(zip(CONFIGS, axes.ravel()), start=1):
         set_q(robot, joints, q)
@@ -130,14 +130,22 @@ def part3(gui=False):
               f'dtheta = {abs(wrap(pose_fk[2] - pose_pb[2])):.1e}')
 
         ax.imshow(img, extent=cam.extent())
-        pts = joint_points(q)
-        ax.plot(pts[:, 0], pts[:, 1], 'w--', lw=0.8, alpha=0.8)
-        ax.annotate(f'ee ({pose_fk[0]:.3f}, {pose_fk[1]:.3f})\nθ = {np.degrees(wrap(pose_fk[2])):.0f}°',
-                    pts[-1], xytext=(10, -28), textcoords='offset points', color='k', fontsize=9,
-                    bbox=dict(fc='w', ec='none', alpha=0.85))
-        ax.set_title(f'Config {k}: θ = ({_pi_str(q[0])}, {_pi_str(q[1])}, {_pi_str(q[2])})')
+        ax.set_title(f'Config {k}: q = ({_pi_str(q[0])}, {_pi_str(q[1])}, {_pi_str(q[2])})')
         ax.set_xlabel('x [m]')
         ax.set_ylabel('y [m]')
+        if k == 2:
+            # Links 1 and 2 coincide exactly in this configuration. Keep the
+            # unchanged full render and add a labelled cutaway of the same pose.
+            p.changeVisualShape(robot, joints[1], rgbaColor=[0.95, 0.55, 0., 0.])
+            cutaway_cam = TopCamera([0.15, 0.], 0.17, size=(600, 170))
+            cutaway = cutaway_cam.render()
+            p.changeVisualShape(robot, joints[1], rgbaColor=[0.95, 0.55, 0., 1.])
+            imageio.imwrite(os.path.join(OUT, 'q3_config2_cutaway.png'), cutaway)
+            inset = ax.inset_axes([0.08, 0.57, 0.84, 0.23])
+            inset.imshow(cutaway)
+            inset.set_title('Same pose: link 2 hidden to expose link 1', fontsize=8)
+            inset.set_xticks([])
+            inset.set_yticks([])
     axes[0, 0].plot([], [], color=(0.85, 0.1, 0.1), lw=4, label='link 1')
     axes[0, 0].plot([], [], color=(0.95, 0.55, 0.0), lw=4, label='link 2')
     axes[0, 0].plot([], [], color=(0.55, 0.1, 0.75), lw=4, label='link 3')
@@ -155,17 +163,21 @@ def _pi_str(a):
 
 # ----------------------------------------------------------------------------- trajectory
 def segment_durations():
-    """Equal peak acceleration on every segment: T_i ~ sqrt(distance_i), sum = 10 s."""
-    d = np.linalg.norm(np.diff(LOCATIONS[:, :2], axis=0), axis=1)
-    return TOTAL_TIME * np.sqrt(d) / np.sum(np.sqrt(d))
+    """Four equal moves, with each waypoint on a simulation time step."""
+    return np.full(len(LOCATIONS) - 1, TOTAL_TIME / (len(LOCATIONS) - 1))
 
 
 def profile(tau):
-    """2nd-order (constant accel / constant decel) profile on tau = t/T in [0, 1].
-    Returns s, ds/dtau, d2s/dtau2; s(0)=0, s(1)=1, s'(0)=s'(1)=0."""
-    if tau < 0.5:
-        return 2 * tau**2, 4 * tau, 4.
-    return 1 - 2 * (1 - tau)**2, 4 * (1 - tau), -4.
+    """C2 move-and-stop profile; position, velocity and acceleration are continuous.
+
+    Lecture 4's polynomial boundary-value construction, adding zero endpoint
+    acceleration: s = 10*tau^3 - 15*tau^4 + 6*tau^5. Returns s, s', s''.
+    """
+    tau = np.clip(tau, 0., 1.)
+    s = tau**3 * (10. + tau * (-15. + 6. * tau))
+    ds = 30. * tau**2 * (1. - tau)**2
+    dds = 60. * tau * (1. - tau) * (1. - 2. * tau)
+    return s, ds, dds
 
 
 def reference(t, durations=None):
@@ -204,14 +216,14 @@ def run_and_record(step_fn, robot, joints, ee, title, gif_name):
     cam = TopCamera(center=[0.55, 0.0], half_height=0.85)
     n_steps = int(round(TOTAL_TIME / DT))
     every = int(round(1. / (GIF_FPS * DT)))
-    log = {k: [] for k in ['t', 'x_des', 'x_meas', 'q']}
+    log = {k: [] for k in ['t', 'x_des', 'x_meas', 'q', 'qdot']}
     frames, des_xy = [], desired_path()
     for k in range(n_steps + 1):
         t = k * DT
         x_des, _ = reference(t)
         x_meas = ee_pose(robot, ee)
-        q, _ = get_q(robot, joints)
-        for key, val in zip(log, [t, x_des, x_meas, q]):
+        q, qdot = get_q(robot, joints)
+        for key, val in zip(log, [t, x_des, x_meas, q, qdot]):
             log[key].append(val)
         if k % every == 0:
             act = np.array(log['x_meas'])[:, :2]
@@ -221,40 +233,25 @@ def run_and_record(step_fn, robot, joints, ee, title, gif_name):
             step_fn(t, q, x_meas)
             p.stepSimulation()
     imageio.mimsave(os.path.join(OUT, gif_name), frames, duration=1000. / GIF_FPS, loop=0)
-    return {k: np.array(v) for k, v in log.items()}
+    log = {k: np.array(v) for k, v in log.items()}
+    np.savez_compressed(os.path.join(OUT, gif_name.replace('.gif', '.npz')), **log)
+    return log
 
 
-def plot_results(log, fname, title, show_theta_des=True):
+def plot_results(log, fname, title):
     err = np.linalg.norm(log['x_meas'][:, :2] - log['x_des'][:, :2], axis=1)
-    fig, ax = plt.subplots(1, 3, figsize=(16, 4.8))
-    ax[0].plot(log['x_des'][:, 0], log['x_des'][:, 1], 'k--', lw=1, label='desired')
-    ax[0].plot(log['x_meas'][:, 0], log['x_meas'][:, 1], 'g', lw=2, alpha=0.8, label='end effector')
+    fig, ax = plt.subplots(figsize=(6, 4.5))
+    ax.plot(log['x_meas'][:, 0], log['x_meas'][:, 1], color='tab:green', lw=3, label='measured')
+    ax.plot(log['x_des'][:, 0], log['x_des'][:, 1], 'k--', lw=1, label='reference')
     for k, (x, y, _) in enumerate(LOCATIONS[:4], start=1):
-        ax[0].plot(x, y, 'ko')
-        ax[0].annotate(str(k), (x, y), xytext=(6, 6), textcoords='offset points')
-    ax[0].set_aspect('equal')
-    ax[0].set_xlabel('x [m]')
-    ax[0].set_ylabel('y [m]')
-    ax[0].set_title('End-effector path')
-    ax[0].legend()
-
-    t = log['t']
-    ax[1].plot(t, log['x_meas'][:, 0], label='x')
-    ax[1].plot(t, log['x_meas'][:, 1], label='y')
-    ax[1].plot(t, wrap(log['x_meas'][:, 2]), label='θ_ee')
-    if show_theta_des:
-        ax[1].plot(t, log['x_des'][:, 2], 'k:', label='θ_des')
-    ax[1].plot(t, log['x_des'][:, 0], 'k--', lw=0.8)
-    ax[1].plot(t, log['x_des'][:, 1], 'k--', lw=0.8)
-    ax[1].set_xlabel('t [s]')
-    ax[1].set_title('Pose vs time (dashed: desired)')
-    ax[1].legend()
-
-    ax[2].semilogy(t, np.maximum(err, 1e-9))
-    ax[2].set_xlabel('t [s]')
-    ax[2].set_ylabel('|p_des - p| [m]')
-    ax[2].set_title(f'Position error (max {err.max() * 1e3:.2f} mm)')
-    fig.suptitle(title)
+        ax.plot(x, y, 'ko', ms=5)
+        ax.annotate(str(k), (x, y), xytext=(7, 6), textcoords='offset points')
+    ax.set_aspect('equal')
+    ax.set_xlabel('x [m]')
+    ax.set_ylabel('y [m]')
+    ax.set_title(title + '\n' + r'$1\to2\to3\to4\to1$')
+    ax.legend(loc='upper right')
+    ax.grid(alpha=0.2)
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, fname), dpi=120)
     plt.close(fig)
@@ -295,99 +292,74 @@ def _print_setpoints(log):
     starts = np.concatenate([[0.], np.cumsum(segment_durations())])
     for k, ts in enumerate(starts):
         i = int(round(ts / DT))
-        print(f'  t = {ts:5.2f} s  location {[1, 2, 3, 4, 1][k]}: measured ee = {np.round(log["x_meas"][i], 4)}')
+        speed = np.linalg.norm(jacobian(log['q'][i])[:2] @ log['qdot'][i])
+        print(f'  t = {ts:5.2f} s  location {[1, 2, 3, 4, 1][k]}: '
+              f'measured ee = {np.round(log["x_meas"][i], 4)}, speed = {speed:.2e} m/s')
 
 
 # ----------------------------------------------------------------------------- Q6
-K_P = 20.        # task-space feedback gain [1/s]
 K_NULL = 10.     # nullspace gradient gain
-LAMBDA = 1e-3    # DLS damping (only matters next to the stretched-out singularity)
 
 
 def null_gradient(q):
-    """Gradient ascent direction for H(q) = -1/2 (q2^2 + q3^2).
+    """Gradient of U = 1/2 (wrap(q2)^2 + wrap(q3)^2), away from wrap cuts.
 
-    The angle between link i and link i+1 is pi - |q_{i+1}|, so maximising the
-    angles between sequential links means driving q2, q3 towards 0 (a smooth
-    surrogate of maximising sum_i (pi - |q_{i+1}|))."""
+    The interior angle at a shared joint is alpha_i = pi - |wrap(q_{i+1})|.
+    U penalises squared departures from the largest angle, pi. This is a local
+    posture objective, not a claim of a global maximum of both angles.
+    """
     qw = wrap(q)
-    return -np.array([0., qw[1], qw[2]])
+    return np.array([0., qw[1], qw[2]])
+
+
+def closed_loop_target(q, x_meas, t):
+    """Lecture 4's measured-state, next-sample resolved-rate step plus nullspace.
+
+    Correct the O(dt^2) error of the linearised step by repeated Cartesian
+    corrections. No simulated joint state is reset during motion.
+    """
+    x_next, _ = reference(t + DT)
+    if t == 0.:
+        # At full extension J has rank one. IK selects the departure branch at
+        # the first nonzero sample; the actual initial state is exactly q = 0.
+        return ik(x_next, elbow=1., q_near=q)
+    if t + DT >= TOTAL_TIME - 1e-12:
+        # The final full-reach point has the unique straight-arm posture.
+        return q + wrap(-q)
+    J_dagger, N = pinv_and_null(jacobian(q)[:2])
+    delta_x = x_next[:2] - x_meas[:2]
+    q_next = q + J_dagger @ delta_x - DT * K_NULL * N @ null_gradient(q)
+    # Retain measured Cartesian feedback while correcting finite-step error.
+    goal = fk(q)[:2] + delta_x
+    for _ in range(12):
+        error = goal - fk(q_next)[:2]
+        if np.linalg.norm(error) < 1e-10:
+            break
+        J_dagger, _ = pinv_and_null(jacobian(q_next)[:2])
+        correction = J_dagger @ error
+        # Limit Newton updates near full extension without changing the goal.
+        q_next += correction * min(1., 0.2 / max(np.linalg.norm(correction), 1e-15))
+    return q_next
 
 
 def part6(gui=False):
-    """Closed-loop resolved-rate control on (x, y) with a nullspace term:
-        qdot = J+ (pdot_des + K (p_des - p)) + (I - J+ J) K_null grad H(q)
-    J is the 2x3 position Jacobian, p is the *measured* end-effector position."""
+    """Closed-loop position tracking with projected gradient descent on U(q)."""
     robot, joints, ee = make_sim(gui)
-    # Location 1 is at full reach (only the straight arm reaches it), which is a
-    # kinematic singularity: no joint velocity moves the tip radially. Start with
-    # a tiny symmetric bend (rotated so the tip stays on the x axis) to pick the
-    # elbow direction; the initial tip error is below 0.1 mm.
-    eps = 0.01
-    q0 = np.array([0., eps, eps])
-    q0[0] = -np.arctan2(fk(q0)[1], fk(q0)[0])
-    set_q(robot, joints, q0)
-    print(f'\nQ6 initial q = {np.round(q0, 4)}, initial tip error = '
-          f'{np.linalg.norm(fk(q0)[:2] - LOCATIONS[0, :2]) * 1e3:.3f} mm')
+    set_q(robot, joints, np.zeros(3))
 
     def step(t, q_meas, x_meas):
-        p_des, v_des = reference(t)
-        J = jacobian(q_meas)[:2]
-        J_pinv = dls_pinv(J, LAMBDA)
-        task = J_pinv @ (v_des[:2] + K_P * (p_des[:2] - x_meas[:2]))
-        null = (np.eye(3) - J_pinv @ J) @ (K_NULL * null_gradient(q_meas))
-        qdot = task + null
+        q_next = closed_loop_target(q_meas, x_meas, t)
+        qdot = (q_next - q_meas) / DT
         p.setJointMotorControlArray(robot, joints, p.VELOCITY_CONTROL,
                                     targetVelocities=qdot.tolist(), forces=[500.] * 3)
 
     log = run_and_record(step, robot, joints, ee, 'Q6 closed-loop + nullspace', 'q6_closed_loop.gif')
-    err = plot_results(log, 'q6_closed_loop.png', 'Q6: closed-loop control with nullspace link-angle maximisation',
-                       show_theta_des=False)
+    err = plot_results(log, 'q6_closed_loop.png', 'Q6: closed-loop control with nullspace motion')
     print(f'Q6 closed loop: max |pos err| = {err.max() * 1e3:.3f} mm, '
           f'RMS = {np.sqrt(np.mean(err**2)) * 1e3:.3f} mm')
     _print_setpoints(log)
-    _plot_link_angles(log)
     p.disconnect()
     return log
-
-
-def optimal_link_angles(p_xy, n=2001):
-    """Brute-force reference: over all ee orientations reaching p_xy, the one
-    minimising q2^2 + q3^2. Returns the two inter-link angles [rad]."""
-    ths = np.linspace(-np.pi, np.pi, n)
-    best, best_q = np.inf, None
-    for elbow in (1., -1.):
-        q = np.array([ik([p_xy[0], p_xy[1], th], elbow) for th in ths])
-        cost = wrap(q[:, 1])**2 + wrap(q[:, 2])**2
-        reach = np.hypot(p_xy[0] - L[2] * np.cos(ths), p_xy[1] - L[2] * np.sin(ths)) <= L[0] + L[1]
-        cost[~reach] = np.inf
-        i = np.argmin(cost)
-        if cost[i] < best:
-            best, best_q = cost[i], q[i]
-    return np.pi - np.abs(wrap(best_q[1:]))
-
-
-def _plot_link_angles(log):
-    """Inter-link angles of Q6 vs the theta = 0 IK solution of Q5 and the static optimum."""
-    q5 = [ik(x, elbow=1.) for x in log['x_des']]
-    q5 = np.unwrap(np.array(q5), axis=0)
-    sub = slice(None, None, 24)
-    opt = np.array([optimal_link_angles(x[:2]) for x in log['x_des'][sub]])
-    fig, ax = plt.subplots(figsize=(8, 4.2))
-    for i, c in zip([1, 2], ['C0', 'C1']):
-        ax.plot(log['t'][sub], np.degrees(opt[:, i - 1]), c + 'o', ms=3, mfc='none',
-                label=f'optimum: angle between link {i} and {i + 1}')
-        ax.plot(log['t'], np.degrees(np.pi - np.abs(wrap(log['q'][:, i]))), c,
-                label=f'Q6: angle between link {i} and {i + 1}')
-        ax.plot(log['t'], np.degrees(np.pi - np.abs(wrap(q5[:, i]))), c + '--',
-                label=f'Q5 (θ = 0): angle between link {i} and {i + 1}')
-    ax.set_xlabel('t [s]')
-    ax.set_ylabel('angle [deg]  (180 = straight)')
-    ax.set_title('Angles between sequential links')
-    ax.legend(fontsize=8)
-    fig.tight_layout()
-    fig.savefig(os.path.join(OUT, 'q6_link_angles.png'), dpi=120)
-    plt.close(fig)
 
 
 # -----------------------------------------------------------------------------

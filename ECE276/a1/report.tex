@@ -1,142 +1,124 @@
 \documentclass[11pt]{article}
-\usepackage[margin=0.9in]{geometry}
-\usepackage{amsmath,amssymb,graphicx,booktabs,float,hyperref}
-\title{ECE276C Assignment 1: Robot Kinematics and Simple Control}
-\author{}
-\date{}
+\usepackage[margin=0.8in]{geometry}
+\usepackage{amsmath,amssymb,graphicx,float,hyperref}
+\hypersetup{hidelinks}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
 \begin{document}
-\maketitle
+\begin{center}
+{\Large ECE276C Assignment 1}\\[3pt]
+{\large Robot Kinematics and Simple Control}
+\\[8pt]
+Sachin Bhadang\\
+PID: A69040722\\
+Email: \href{mailto:sbhadang@ucsd.edu}{sbhadang@ucsd.edu}
+\end{center}
 
-\noindent Code: \texttt{arm.py} (kinematics), \texttt{a1\_solution.py} (PyBullet: Q3, Q5, Q6),
-\texttt{figures.py} (Q1, Q4 figures). Outputs are in \texttt{results/}.
-Run with \texttt{conda activate q4; python a1\_solution.py; python figures.py}.
-
-%--------------------------------------------------------------------------
 \section*{1. Arm and body-fixed coordinate frames}
 \begin{figure}[H]
-\centering\includegraphics[width=0.72\textwidth]{results/q1_frames.png}
-\caption{Three-link planar arm with body-fixed frames (modified D-H, Table 1).}
+\centering\includegraphics[width=0.65\textwidth]{results/q1_frames.png}
 \end{figure}
-Frame $\{0\}$ is fixed to the base. Frame $\{i\}$ ($i=1,2,3$) is attached to link $i$ with its origin at joint $i$,
-$x_i$ along link $i$ and $z_i$ along the joint axis (out of the page, opposite to gravity).
-Following Table 1, $\{1\}$ is $\{0\}$ rotated by $\theta_1$; $\{2\}$ is translated $l_1$ along $x_1$ and rotated by $\theta_2$;
-$\{3\}$ is translated $l_2$ along $x_2$ and rotated by $\theta_3$; $\{ee\}$ is translated $l_3$ along $x_3$ with no rotation.
-At $\theta=(0,0,0)$ every $x_i$ is aligned with $x_0$ and the arm is fully stretched.
+Frame $\{0\}$ is fixed at the base. Frame $\{i\}$ is attached to link $i$ at joint $i$, with $x_i$ along the link and $z_i$ along the joint axis. Frame $\{ee\}$ is at the tip, with the same orientation as $\{3\}$. All frames are right-handed. The offsets follow assignment Table 1: $a_0=0$, $a_1=l_1$, $a_2=l_2$, $a_3=l_3$.
 
-%--------------------------------------------------------------------------
-\section*{2. Forward kinematics}
-Each D-H row is $T_{i-1,i} = \mathrm{Trans}_x(a_{i-1})\,\mathrm{Rot}_z(\theta_i)$; multiplying the four planar transforms gives
+\section*{2. End-effector kinematics}
+Let $\mathbf{q}=[\theta_1,\theta_2,\theta_3]^\top$ and $\mathbf{x}=f(\mathbf{q})=[X,Y,\theta]^\top$. Then
 \begin{align*}
-X &= l_1\cos\theta_1 + l_2\cos(\theta_1+\theta_2) + l_3\cos(\theta_1+\theta_2+\theta_3)\\
-Y &= l_1\sin\theta_1 + l_2\sin(\theta_1+\theta_2) + l_3\sin(\theta_1+\theta_2+\theta_3)\\
-\theta &= \theta_1+\theta_2+\theta_3
+X &= l_1\cos\theta_1+l_2\cos(\theta_1+\theta_2)
+     +l_3\cos(\theta_1+\theta_2+\theta_3),\\
+Y &= l_1\sin\theta_1+l_2\sin(\theta_1+\theta_2)
+     +l_3\sin(\theta_1+\theta_2+\theta_3),\\
+\theta &= \theta_1+\theta_2+\theta_3 \pmod{2\pi}.
 \end{align*}
-These equations match the end-effector pose that PyBullet reports for the URDF to within $3\times10^{-8}$\,m and $3\times10^{-8}$\,rad
-in all four configurations of Q3.
+At $\mathbf{q}=\mathbf{0}$, the arm points along $+x_0$ and the tip is at $(l_1+l_2+l_3,0)$.
 
-%--------------------------------------------------------------------------
-\section*{3. PyBullet renders ($l_1=l_2=0.5$, $l_3=0.2$\,m)}
+\newpage
+\section*{3. Required PyBullet configurations}
 \begin{figure}[H]
-\centering\includegraphics[width=0.78\textwidth]{results/q3_configs.png}
-\caption{Top-down PyBullet renders (individual images: \texttt{results/q3\_config\{1..4\}.png}).
-Links are recoloured (red, orange, purple) to tell them apart. The white dashed line is the analytic FK
-skeleton drawn over the render.}
+\centering\includegraphics[width=0.85\textwidth]{results/q3_configs.png}
+\caption{The supplied URDF with $l_1=l_2=0.5$\,m and $l_3=0.2$\,m. Links 1, 2 and 3 are red, orange and purple. In configuration 2, links 1 and 2 coincide exactly; the labeled inset hides link 2 to expose link 1 without changing the joint configuration.}
 \end{figure}
-\begin{table}[H]\centering
-\begin{tabular}{cccc}\toprule
-Config & $(\theta_1,\theta_2,\theta_3)$ & $(X, Y)$ [m] & $\theta$ \\\midrule
-1 & $(0,0,\pi/2)$ & $(1.000, 0.200)$ & $90^\circ$\\
-2 & $(0,\pi,0)$ & $(-0.200, 0.000)$ & $180^\circ$\\
-3 & $(\pi/2,\pi/2,\pi/4)$ & $(-0.641, 0.359)$ & $225^\circ\ (-135^\circ)$\\
-4 & $(\pi/3,\pi/2,0)$ & $(-0.356, 0.783)$ & $150^\circ$\\\bottomrule
-\end{tabular}
-\end{table}
-In configuration 2, link 2 folds back exactly on top of link 1 ($\theta_2=\pi$, $l_1=l_2$), so the two overlap in every view.
-The overlap shows as mixed red/orange, with link 3 sticking out to $x=-0.2$\,m.
 
-%--------------------------------------------------------------------------
-\section*{4. Control block diagrams}
+\section*{4. Open-loop and closed-loop control diagrams}
 \begin{figure}[H]
 \centering\includegraphics[width=\textwidth]{results/q4_block_diagrams.png}
-\caption{(a) Open loop: the reference is turned into joint setpoints by inverse kinematics, and the end-effector
-pose is never measured. (b) Closed loop: the measured end-effector position is fed back through a task-space
-gain and the Jacobian pseudo-inverse, and a nullspace term handles the redundant DOF.}
 \end{figure}
+Both diagrams use $\mathbf{x}_{ref}=[X,Y,\theta]_{ref}^\top$.
+In (b), $J=\partial f/\partial\mathbf{q}\in\mathbb{R}^{3\times3}$,
+$\mathbf{e}=\mathbf{x}_{ref}-\mathbf{x}_{meas}$, and the orientation error is wrapped to $[-\pi,\pi)$.
 
-%--------------------------------------------------------------------------
-\section*{5. Second-order smooth profile and open-loop setpoint control}
-\textbf{Profile.} A move from $\mathbf{x}_0=\{x,y,\theta\}_0$ to $\mathbf{x}_{ref}$ over a duration $T$ uses a scalar path parameter:
+\newpage
+\section*{5. Smooth profile and open-loop motion}
+For a move of duration $T$, let $\tau=t/T$ and use
 \[
-\mathbf{x}_d(t) = \mathbf{x}_0 + s(\tau)\,(\mathbf{x}_{ref}-\mathbf{x}_0),\qquad \tau=t/T,\qquad
-s(\tau)=\begin{cases}2\tau^2 & 0\le\tau<\tfrac12\\ 1-2(1-\tau)^2 & \tfrac12\le\tau\le 1\end{cases}
+\mathbf{x}_{ref}(t)=\mathbf{x}_0+s(\tau)(\mathbf{x}_f-\mathbf{x}_0),
+\qquad s(\tau)=10\tau^3-15\tau^4+6\tau^5.
 \]
-$s$ is piecewise second order (constant acceleration, then constant deceleration):
-$\dot s = 4\tau/T$ and $4(1-\tau)/T$, $\ddot s=\pm 4/T^2$.
-It is $C^1$, with $s(0)=0$, $s(1)=1$ and $\dot s(0)=\dot s(1)=0$. The robot therefore starts and stops at each setpoint with
-zero velocity, and peaks at $2\|\Delta\mathbf{x}\|/T$ halfway. All coordinates share one scalar $s$, so the end
-effector moves on the \emph{straight line} between setpoints.
-
-The segment durations are chosen so that every segment has the same peak acceleration ($T_i\propto\sqrt{d_i}$) and the
-total is 10\,s: $T = (2.62,\,2.83,\,2.02,\,2.53)$\,s for $1\to2\to3\to4\to1$.
-
-\textbf{Open-loop control.} At each 240\,Hz step, $\mathbf{x}_d(t)$ is converted to joint setpoints by analytic IK.
-First the wrist point $(x_w,y_w)=(x-l_3\cos\theta,\ y-l_3\sin\theta)$ is computed. Then
+The polynomial satisfies the boundary conditions
 \[
-\theta_2=\arccos\frac{x_w^2+y_w^2-l_1^2-l_2^2}{2l_1l_2},\quad
-\theta_1=\operatorname{atan2}(y_w,x_w)-\operatorname{atan2}(l_2\sin\theta_2,\,l_1+l_2\cos\theta_2),\quad
-\theta_3=\theta-\theta_1-\theta_2 .
+s(0)=0,\quad s(1)=1,\quad
+s'(0)=s'(1)=0,\quad s''(0)=s''(1)=0,
 \]
-The elbow branch is fixed and angles are unwrapped for continuity. The setpoints $q_d,\dot q_d$ go to PyBullet's joint
-position motors. The end-effector pose is never fed back.
+where primes denote derivatives with respect to $\tau$. In physical time,
+\[
+\dot s=\frac{30\tau^2(1-\tau)^2}{T},\qquad
+\ddot s=\frac{60\tau(1-\tau)(1-2\tau)}{T^2}.
+\]
+The profile is second-order smooth ($C^2$): position, velocity and acceleration are continuous, including at the waypoints. All coordinates use the same $s$, so each Cartesian segment is straight.
 
-\textbf{Result} (\texttt{results/q5\_open\_loop.gif}, 10\,s, 20\,fps; the green trail is the end-effector path).
-In this ideal simulation (exact model, no disturbances) the open-loop scheme tracks well: the maximum position error is
-$3.8\,\mu$m and the maximum orientation error is $7\times10^{-4}$\,deg. Every setpoint is reached at zero velocity.
+The four moves $1\to2\to3\to4\to1$ take $2.5$\,s each, totaling $10$\,s; $\theta_{ref}=0$ throughout. At $240$\,Hz, analytic inverse kinematics converts each sampled pose into joint setpoints on one continuous elbow branch. These drive PyBullet's position motors, with joint velocity feedforward; measured end-effector pose is used only for recording.
+
 \begin{figure}[H]
-\centering\includegraphics[width=\textwidth]{results/q5_open_loop.png}
-\caption{Q5: end-effector path, pose vs.\ time, and position error.}
+\centering
+\includegraphics[width=0.36\textwidth]{results/q5_open_loop.png}\\[4pt]
+\includegraphics[width=0.32\textwidth]{results/q5_open_loop_frame1.png}\hfill
+\includegraphics[width=0.32\textwidth]{results/q5_open_loop_frame2.png}\hfill
+\includegraphics[width=0.32\textwidth]{results/q5_open_loop_frame3.png}
+\caption{Q5: measured end-effector path (top) and animation frames at $t=2.5$, $5.0$ and $7.5$\,s (bottom, left to right), reaching locations 2, 3 and 4 with $\theta=0$.}
 \end{figure}
+Animation: \texttt{q5\_open\_loop.gif} ($20$\,fps, $10.05$\,s including the final frame). The reference velocity is zero at every waypoint. In the sampled simulation, waypoint speeds are below $6\times10^{-5}$\,m/s and the maximum position error is $3.9\,\mu$m.
 
-%--------------------------------------------------------------------------
-\section*{6. Closed-loop control with a nullspace controller}
-Only $(x,y)$ is controlled now, so the arm has one redundant DOF. With $p=[x,y]^T$ the \emph{measured} end-effector
-position and $J(q)=\partial p/\partial q\in\mathbb{R}^{2\times3}$, the resolved-rate law is
+\newpage
+\section*{6. Closed-loop motion and nullspace control}
+The task is now $\mathbf{x}_{xy}=[X,Y]^\top$; $\theta$ is free. Use the same reference path and timing as Q5, with
+$J_{xy}=\partial\mathbf{x}_{xy}/\partial\mathbf{q}\in\mathbb{R}^{2\times3}$.
+Compute the SVD pseudoinverse $J_{xy}^\dagger$ and
 \[
-\dot q = J^{+}\big(\dot p_d + K_p\,(p_d-p)\big) + \big(I-J^{+}J\big)\,k_0\nabla H(q),
-\qquad
-J=\begin{bmatrix}-l_1s_1-l_2s_{12}-l_3s_{123} & -l_2s_{12}-l_3s_{123} & -l_3s_{123}\\
-                  \ \ l_1c_1+l_2c_{12}+l_3c_{123} & \ \ l_2c_{12}+l_3c_{123} & \ \ l_3c_{123}\end{bmatrix}.
+N=I_3-J_{xy}^\dagger J_{xy},\qquad J_{xy}N=0.
 \]
-The reference $p_d(t)$, $\dot p_d(t)$ is the same straight-line, second-order profile as in Q5.
-$\dot q$ is sent to PyBullet's joint velocity motors, and $q$ and $p$ are read back from the simulator every step.
-Gains: $K_p=20\,\mathrm{s}^{-1}$, $k_0=10$. The pseudo-inverse is a damped least-squares pseudo-inverse,
-$J^{+}=J^T(JJ^T+\lambda^2I)^{-1}$ with $\lambda=10^{-3}$.
 
-\textbf{Nullspace objective.} The angle between link $i$ and link $i+1$ is $\pi-|\theta_{i+1}|$ (it equals $\pi$ when they are aligned).
-Maximising both angles is equivalent to driving $\theta_2,\theta_3\to 0$. A smooth objective for this is
+Define the interior angles at the shared joints by
 \[
-H(q) = -\tfrac12(\theta_2^2+\theta_3^2),\qquad \nabla H = [\,0,\ -\theta_2,\ -\theta_3\,]^T .
+\alpha_{12}=\pi-|\bar\theta_2|,\qquad
+\alpha_{23}=\pi-|\bar\theta_3|,
+\qquad \bar\theta_i=\operatorname{wrap}_{[-\pi,\pi)}(\theta_i).
 \]
-The projector $I-J^{+}J$ removes every component of this term that would move $p$, so the $x,y$ trajectory is unaffected.
-The end-effector orientation $\theta$ is left free.
+A straight pair of links has the largest interior angle, $\pi$. To drive both angles toward this value subject to the position constraint, minimize their squared departures from $\pi$:
+\[
+U(\mathbf{q})=\tfrac12\big[(\pi-\alpha_{12})^2+(\pi-\alpha_{23})^2\big]
+=\tfrac12(\bar\theta_2^2+\bar\theta_3^2),\qquad
+\nabla_{\mathbf{q}}U=[0,\bar\theta_2,\bar\theta_3]^\top.
+\]
+The angles stay away from the wrap discontinuity during this motion. Use projected gradient descent:
+\[
+\dot{\mathbf{q}}_2=-\lambda\nabla_{\mathbf{q}}U,\qquad
+\dot{\mathbf{q}}_{null}=N\dot{\mathbf{q}}_2,\qquad \lambda=10\,\mathrm{s}^{-1}.
+\]
+Combining it with the next-sample closed-loop trajectory step gives
+\[
+\delta\mathbf{q}
+=J_{xy}^\dagger\big(\mathbf{x}_{xy,ref}[k+1]-\mathbf{x}_{xy,meas}[k]\big)
++\Delta t\,\dot{\mathbf{q}}_{null},\qquad \Delta t=1/240\,\mathrm{s}.
+\]
+Thus $J_{xy}\dot{\mathbf{q}}_{null}=0$: the secondary controller changes posture without adding Cartesian velocity. This is a local optimization of $U$ along the position constraint.
 
-\textbf{Singularity at location 1.} $(1.2,0)$ is at full reach, so the arm must be fully straight there, which is a singular
-configuration: no joint velocity moves the tip radially inwards. The simulation therefore starts from a tiny symmetric bend
-($\theta_2=\theta_3=0.01$, rotated so the tip stays on the $x$ axis). This picks the elbow direction and gives an initial error of
-only $0.03$\,mm.
+The implementation reads the joint angles and end-effector position each step. It corrects the finite-step linearization error with repeated Jacobian position corrections, then sends the resulting joint increment divided by $\Delta t$ to the velocity motors. At location 1 the arm is straight and $J_{xy}$ is singular; analytic IK selects the first nonzero departure sample, and the final sample returns to the straight posture. The simulated initial state is exactly $\mathbf{q}=\mathbf{0}$.
 
-\textbf{Result} (\texttt{results/q6\_closed\_loop.gif}). The maximum position error is $0.11$\,mm and the RMS error is $0.06$\,mm,
-so the $x,y$ path is followed essentially exactly. Figure~\ref{fig:angles} compares the inter-link angles with the fixed-$\theta=0$
-solution of Q5, and with a brute-force optimum: for each $p_d$, a search over all orientations $\theta$ for the one minimising
-$\theta_2^2+\theta_3^2$. The nullspace controller tracks the optimum closely. It keeps the links much straighter than Q5,
-whose minimum angle is $23^\circ$ against $52^\circ$ here. The bend is spread over both joints, as expected.
 \begin{figure}[H]
-\centering\includegraphics[width=\textwidth]{results/q6_closed_loop.png}
-\caption{Q6: end-effector path, pose vs.\ time (the orientation $\theta_{ee}$ is free), and position error.}
+\centering
+\includegraphics[width=0.32\textwidth]{results/q6_closed_loop_frame1.png}\hfill
+\includegraphics[width=0.32\textwidth]{results/q6_closed_loop_frame2.png}\hfill
+\includegraphics[width=0.32\textwidth]{results/q6_closed_loop_frame3.png}
+\caption{Q6 animation frames at $t=2.5$, $5.0$ and $7.5$\,s (left to right). The same locations are reached while orientation is free.}
 \end{figure}
-\begin{figure}[H]
-\centering\includegraphics[width=0.75\textwidth]{results/q6_link_angles.png}
-\caption{Angles between sequential links: Q6 nullspace controller (solid), the brute-force optimum (circles), and
-Q5 with $\theta=0$ (dashed).}\label{fig:angles}
-\end{figure}
+Animation: \texttt{q6\_closed\_loop.gif} ($20$\,fps, $10.05$\,s). The maximum measured position error is below $2\,\mu$m. The nullspace identity is exact in the kinematic model; the simulation follows the prescribed path to this numerical accuracy.
 \end{document}
