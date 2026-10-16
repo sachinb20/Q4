@@ -168,15 +168,16 @@ def segment_durations():
 
 
 def profile(tau):
-    """C2 move-and-stop profile; position, velocity and acceleration are continuous.
+    """C3 move-and-stop profile; velocity and acceleration have continuous derivatives.
 
-    Lecture 4's polynomial boundary-value construction, adding zero endpoint
-    acceleration: s = 10*tau^3 - 15*tau^4 + 6*tau^5. Returns s, s', s''.
+    Lecture 4's polynomial boundary-value construction with zero endpoint
+    velocity, acceleration and jerk: s = 35*tau^4 - 84*tau^5 + 70*tau^6 - 20*tau^7.
+    Returns s, s', s''.
     """
     tau = np.clip(tau, 0., 1.)
-    s = tau**3 * (10. + tau * (-15. + 6. * tau))
-    ds = 30. * tau**2 * (1. - tau)**2
-    dds = 60. * tau * (1. - tau) * (1. - 2. * tau)
+    s = tau**4 * (35. + tau * (-84. + tau * (70. - 20. * tau)))
+    ds = 140. * tau**3 * (1. - tau)**3
+    dds = 420. * tau**2 * (1. - tau)**2 * (1. - 2. * tau)
     return s, ds, dds
 
 

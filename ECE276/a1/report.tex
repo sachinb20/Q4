@@ -1,6 +1,17 @@
 \documentclass[11pt]{article}
 \usepackage[margin=0.8in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
 \usepackage{amsmath,amssymb,graphicx,float,hyperref}
+\usepackage{xcolor,listings}
+\lstset{language=Python, basicstyle=\ttfamily\scriptsize, columns=fullflexible, keepspaces=true,
+  numbers=left, numberstyle=\tiny\color{gray}, numbersep=6pt, xleftmargin=2em,
+  breaklines=true, postbreak=\mbox{\textcolor{gray}{$\hookrightarrow$}\space},
+  showstringspaces=false, upquote=true, tabsize=4,
+  keywordstyle=\color{blue!70!black}\bfseries, commentstyle=\color{green!45!black}\itshape,
+  stringstyle=\color{red!60!black},
+  inputencoding=utf8, extendedchars=true,
+  literate={π}{{$\pi$}}1 {θ}{{$\theta$}}1 {°}{{$^\circ$}}1 {−}{{$-$}}1}
 \hypersetup{hidelinks}
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{5pt}
@@ -40,30 +51,30 @@ At $\mathbf{q}=\mathbf{0}$, the arm points along $+x_0$ and the tip is at $(l_1+
 
 \section*{4. Open-loop and closed-loop control diagrams}
 \begin{figure}[H]
-\centering\includegraphics[width=\textwidth]{results/q4_block_diagrams.png}
+\centering\includegraphics[width=0.95\textwidth]{results/q4_block_diagrams.png}
 \end{figure}
-Both diagrams use $\mathbf{x}_{ref}=[X,Y,\theta]_{ref}^\top$.
-In (b), $J=\partial f/\partial\mathbf{q}\in\mathbb{R}^{3\times3}$,
-$\mathbf{e}=\mathbf{x}_{ref}-\mathbf{x}_{meas}$, and the orientation error is wrapped to $[-\pi,\pi)$.
+Both diagrams use $\mathbf{x}_{ref}=[X,Y,\theta]_{ref}^\top$. In (b), $J=\partial f/\partial\mathbf{q}\in\mathbb{R}^{3\times3}$,
+$\mathbf{e}=\mathbf{x}_{ref}-\mathbf{x}_{meas}$ (orientation error wrapped to $[-\pi,\pi)$), and $\mathbf{q}_{ref}=\mathbf{q}_{meas}+\delta\mathbf{q}$.
 
 \newpage
 \section*{5. Smooth profile and open-loop motion}
 For a move of duration $T$, let $\tau=t/T$ and use
 \[
 \mathbf{x}_{ref}(t)=\mathbf{x}_0+s(\tau)(\mathbf{x}_f-\mathbf{x}_0),
-\qquad s(\tau)=10\tau^3-15\tau^4+6\tau^5.
+\qquad s(\tau)=35\tau^4-84\tau^5+70\tau^6-20\tau^7.
 \]
 The polynomial satisfies the boundary conditions
 \[
 s(0)=0,\quad s(1)=1,\quad
-s'(0)=s'(1)=0,\quad s''(0)=s''(1)=0,
+s'(0)=s'(1)=0,\quad s''(0)=s''(1)=0,\quad s'''(0)=s'''(1)=0,
 \]
 where primes denote derivatives with respect to $\tau$. In physical time,
 \[
-\dot s=\frac{30\tau^2(1-\tau)^2}{T},\qquad
-\ddot s=\frac{60\tau(1-\tau)(1-2\tau)}{T^2}.
+\dot s=\frac{140\tau^3(1-\tau)^3}{T},\qquad
+\ddot s=\frac{420\tau^2(1-\tau)^2(1-2\tau)}{T^2},\qquad
+\dddot s=\frac{840\tau(1-\tau)(1-5\tau+5\tau^2)}{T^3}.
 \]
-The profile is second-order smooth ($C^2$): position, velocity and acceleration are continuous, including at the waypoints. All coordinates use the same $s$, so each Cartesian segment is straight.
+The profile is smooth in the second-order sense: $s$ is thrice continuously differentiable ($C^3$), so velocity and acceleration have continuous derivatives, including at the waypoints, where velocity, acceleration and jerk are all zero. All coordinates use the same $s$, so each Cartesian segment is straight.
 
 The four moves $1\to2\to3\to4\to1$ take $2.5$\,s each, totaling $10$\,s; $\theta_{ref}=0$ throughout. At $240$\,Hz, analytic inverse kinematics converts each sampled pose into joint setpoints on one continuous elbow branch. These drive PyBullet's position motors, with joint velocity feedforward; measured end-effector pose is used only for recording.
 
@@ -75,7 +86,7 @@ The four moves $1\to2\to3\to4\to1$ take $2.5$\,s each, totaling $10$\,s; $\theta
 \includegraphics[width=0.32\textwidth]{results/q5_open_loop_frame3.png}
 \caption{Q5: measured end-effector path (top) and animation frames at $t=2.5$, $5.0$ and $7.5$\,s (bottom, left to right), reaching locations 2, 3 and 4 with $\theta=0$.}
 \end{figure}
-Animation: \texttt{q5\_open\_loop.gif} ($20$\,fps, $10.05$\,s including the final frame). The reference velocity is zero at every waypoint. In the sampled simulation, waypoint speeds are below $6\times10^{-5}$\,m/s and the maximum position error is $3.9\,\mu$m.
+Animation: \texttt{q5\_open\_loop.gif} ($20$\,fps, $10.05$\,s including the final frame). The reference velocity is zero at every waypoint. In the sampled simulation, waypoint speeds are below $3\times10^{-5}$\,m/s and the maximum position error is $3.9\,\mu$m.
 
 \newpage
 \section*{6. Closed-loop motion and nullspace control}
@@ -113,12 +124,37 @@ Thus $J_{xy}\dot{\mathbf{q}}_{null}=0$: the secondary controller changes posture
 
 The implementation reads the joint angles and end-effector position each step. It corrects the finite-step linearization error with repeated Jacobian position corrections, then sends the resulting joint increment divided by $\Delta t$ to the velocity motors. At location 1 the arm is straight and $J_{xy}$ is singular; analytic IK selects the first nonzero departure sample, and the final sample returns to the straight posture. The simulated initial state is exactly $\mathbf{q}=\mathbf{0}$.
 
+Animation: \texttt{q6\_closed\_loop.gif} ($20$\,fps, $10.05$\,s). The maximum measured position error is below $2\,\mu$m, and waypoint speeds are below $4\times10^{-5}$\,m/s. The nullspace identity is exact in the kinematic model; the simulation follows the prescribed path to this numerical accuracy.
+
+\begin{figure}[H]
+\centering\includegraphics[width=0.8\textwidth]{results/q6_link_angles.png}
+\caption{Interior angles between sequential links. Solid: Q6 nullspace controller. Circles: constrained optimum, found by brute force over every end-effector orientation and both elbow branches that reach the same $(X,Y)$ reference. Dashed: the fixed-$\theta=0$ posture of Q5.}\label{fig:angles}
+\end{figure}
+Figure~\ref{fig:angles} checks the secondary objective. The nullspace controller stays within $1.3^\circ$ ($\alpha_{12}$) and $3.1^\circ$ ($\alpha_{23}$) of the constrained optimum along the whole path; the small lag comes from the finite gain $\lambda$. Its smallest interior angles are $52^\circ$ and $129^\circ$, against $23^\circ$ and $66^\circ$ for Q5's fixed-orientation posture.
+
 \begin{figure}[H]
 \centering
+\includegraphics[width=0.36\textwidth]{results/q6_closed_loop.png}\\[4pt]
 \includegraphics[width=0.32\textwidth]{results/q6_closed_loop_frame1.png}\hfill
 \includegraphics[width=0.32\textwidth]{results/q6_closed_loop_frame2.png}\hfill
 \includegraphics[width=0.32\textwidth]{results/q6_closed_loop_frame3.png}
-\caption{Q6 animation frames at $t=2.5$, $5.0$ and $7.5$\,s (left to right). The same locations are reached while orientation is free.}
+\caption{Q6: measured end-effector path (top) and animation frames at $t=2.5$, $5.0$ and $7.5$\,s (bottom, left to right). The same locations are reached while orientation is free.}
 \end{figure}
-Animation: \texttt{q6\_closed\_loop.gif} ($20$\,fps, $10.05$\,s). The maximum measured position error is below $2\,\mu$m. The nullspace identity is exact in the kinematic model; the simulation follows the prescribed path to this numerical accuracy.
+
+\newpage
+\section*{Code}
+The code uses Python~3 with numpy, matplotlib, pybullet, imageio and Pillow, and sits in one folder next to the supplied \texttt{three-link-robot.urdf}.
+\texttt{python a1\_solution.py} runs Questions 3, 5 and 6 and writes the renders, GIFs, path plots and logged data to \texttt{results/}; \texttt{python figures.py} then draws the Question 1 and 4 figures, the GIF snapshots and the Question 6 link-angle comparison from those results. Together they take about 45\,s.
+
+\subsection*{arm.py: kinematics}
+Forward kinematics, analytic Jacobian, closed-form inverse kinematics, and the SVD pseudoinverse with its nullspace projector.
+\lstinputlisting{arm.py}
+
+\subsection*{a1\_solution.py: simulation and control}
+PyBullet setup and top-down rendering, the Question 3 configurations, the $C^3$ trajectory profile, Question 5 open-loop setpoint control, and Question 6 closed-loop control with the nullspace term.
+\lstinputlisting{a1_solution.py}
+
+\subsection*{figures.py: report figures}
+The Question 1 frame diagram, the Question 4 block diagrams, the animation snapshots, and the Question 6 comparison with the brute-force optimum.
+\lstinputlisting{figures.py}
 \end{document}

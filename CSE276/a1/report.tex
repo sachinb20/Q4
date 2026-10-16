@@ -288,8 +288,8 @@ f_x&=\sqrt{\lambda_B/b_{11}},&f_y&=\sqrt{\lambda_B b_{11}/d},\\
 \gamma&=-\frac{b_{12}f_x^2f_y}{\lambda_B},&
 c_x&=\frac{\gamma c_y}{f_y}-\frac{b_{13}f_x^2}{\lambda_B}.
 \end{align*}
-These follow the closed-form method and Appendix B of Zhang's report
-\cite{zhang}; its vector ordering differs from the one required here.
+These follow the closed-form method and Appendix B of Zhang's
+calibration report; its vector ordering differs from the one required here.
 The general six-vector solution yields
 \[
 A_{\rm free}=\Afree.
@@ -352,7 +352,7 @@ $\tilde R=U\Sigma V\T$ and set
 R=U\operatorname{diag}(1,1,\det(UV\T))V\T.
 \]
 This applies the Section 3.1 pose construction and Appendix C rotation
-projection \cite{zhang}, with a determinant correction to ensure $\det R=+1$.
+projection of Zhang's report, with a determinant correction to ensure $\det R=+1$.
 All matrices below map \emph{world to camera}:
 $X_c=RX_w+t$. Translations are in millimeters; $R$ is dimensionless.
 \begingroup
@@ -389,74 +389,7 @@ poses \emph{relative to the board}. Interpreting them as the camera's motion
 in a fixed external world assumes the board stayed fixed.
 
 \clearpage
-\section{Numerical checks and reproducibility}
-The code in Appendix A generates every numerical result and figure used in
-this report. The input is the supplied \texttt{imgpoints.txt}. The original
-\texttt{q1\_kinematics.py} is not required to run the submitted solution.
-
-The implementation includes the following checks:
-\begin{itemize}
-\item The analytic Jacobian agrees with central finite differences at 30
-joint configurations sampled within the permitted range, using step
-$10^{-6}$ radians and comparison tolerance $10^{-7}$.
-\item The reported IK configuration respects every joint limit and places
-the end effector within $10^{-12}$ cm of the desired point.
-\item Synthetic noiseless points from four known camera poses recover their
-homographies, intrinsic parameters, and extrinsics. This is repeated for
-known skew values of zero and two pixels, exercising both calibration modes.
-Intrinsic estimates agree with the known camera within $10^{-8}$ pixels.
-Both signs of each synthetic homography give the same positive-depth pose.
-\item The two intrinsic recovery methods---the explicit formulas above and
-an independent Cholesky factorization of $B$---agree within $10^{-9}$.
-\item All nine estimated rotations satisfy $R\T R=I$ and $\det R=1$ to
-numerical precision. The maximum observed Frobenius norm
-$\|R\T R-I\|_F$ is $3.28\times10^{-15}$, and every center satisfies $RC+t=0$.
-\item All 432 board points have positive depth in their respective cameras;
-the minimum depth is $337.152468$ mm.
-\end{itemize}
-
-As a further diagnostic, reprojection through the final common $A_0$ and
-the orthonormalized $[R_j\mid t_j]$ has RMS error $0.916839$ pixels, mean
-error $0.798639$ pixels, and maximum error $2.156184$ pixels. These are
-\emph{calibrated-pose} errors, distinct from the $0.434518$-pixel RMS of the
-nine independently fitted homographies. The shared camera model and rotation
-constraints make the fits less flexible; the linear estimates have not been
-refined to minimize pixel error.
-
-To reproduce the numerical work from this directory:
-\begin{lstlisting}[language=bash,numbers=none]
-python -m pip install -r requirements.txt
-python solve_hw1.py
-tectonic report.tex
-\end{lstlisting}
-An existing Python environment with NumPy and Matplotlib can run the second
-command directly. A standard LaTeX installation can also compile
-\texttt{report.tex} with \texttt{pdflatex} (run twice for cross-references).
-The execution here used Python 3.13.11, NumPy 2.5.1, Matplotlib 3.11.1,
-and Tectonic 0.15.0.
-
-\texttt{results/summary.json} contains the numerical summary;
-\texttt{results/calibration.npz} contains full-precision matrices, world
-and image coordinates, and residuals. Numerical tables are generated as
-LaTeX fragments in \texttt{results/}, and the three figures are saved there
-as vector PDFs. No random data affect the fitted calibration; the fixed
-random seed is used only for Jacobian checks.
-
-\begin{thebibliography}{9}
-\raggedright
-\bibitem{assignment} CSE276C, \emph{Homework 1: Kinematics and Camera
-Calibration}, Fall 2026. Supplied assignment and \texttt{imgpoints.txt}.
-\bibitem{zhang} Z. Zhang, \emph{A Flexible New Technique for Camera
-Calibration}, Microsoft Research Technical Report MSR-TR-98-71, 1998,
-updated 2008. Sections 2--3.1 and Appendices A--C.
-\href{https://www.microsoft.com/en-us/research/wp-content/uploads/2016/02/tr98-71.pdf}{Technical report PDF}.
-\end{thebibliography}
-
-\clearpage
 \appendix
 \section{Complete code used for the assignment}
-The listing is included directly from \texttt{solve\_hw1.py}; it matches the
-runnable source. It contains all calculations, validation, plots, and table
-exports, and requires NumPy and Matplotlib.
 \lstinputlisting[basicstyle=\ttfamily\fontsize{8}{9.2}\selectfont]{solve_hw1.py}
 \end{document}

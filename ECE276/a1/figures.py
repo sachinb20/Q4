@@ -8,19 +8,21 @@ import numpy as np
 from matplotlib.patches import Arc, FancyBboxPatch
 from PIL import Image
 
-from arm import joint_points
+from arm import L, joint_points, wrap
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'results')
 
 
 # ----------------------------------------------------------------------------- Q1
-def frame(ax, origin, angle, name, length=0.16, z_mark=True):
+def frame(ax, origin, angle, name, length=0.16, z_mark=True, x_label_shift=(0., 0.)):
     """Draw x (red) and y (green) axes of a planar frame; z points out of the page."""
     o = np.asarray(origin)
-    for vec_angle, color, lbl in [(angle, 'tab:red', 'x'), (angle + np.pi / 2, 'tab:green', 'y')]:
+    for vec_angle, color, lbl, shift in [(angle, 'tab:red', 'x', x_label_shift),
+                                         (angle + np.pi / 2, 'tab:green', 'y', (0., 0.))]:
         d = length * np.array([np.cos(vec_angle), np.sin(vec_angle)])
         ax.annotate('', o + d, o, arrowprops=dict(arrowstyle='-|>', color=color, lw=1.8))
-        ax.text(*(o + 1.22 * d), f'${lbl}_{{{name}}}$', color=color, fontsize=12, ha='center', va='center')
+        ax.text(*(o + 1.22 * d + np.asarray(shift)), f'${lbl}_{{{name}}}$', color=color, fontsize=12,
+                ha='center', va='center')
     if z_mark:
         ax.plot(*o, 'o', ms=9, mfc='w', mec='tab:blue', mew=1.5, zorder=5)
         ax.plot(*o, '.', ms=4, color='tab:blue', zorder=6)
@@ -48,7 +50,8 @@ def q1_figure():
     frame(ax, [0, 0], 0., '0', length=0.22)
     frame(ax, pts[0], c[0], '1')
     frame(ax, pts[1], c[1], '2')
-    frame(ax, pts[2], c[2], '3', length=0.11)
+    # x3 label below link 3, clear of the theta3 arc
+    frame(ax, pts[2], c[2], '3', length=0.11, x_label_shift=0.045 * np.array([np.sin(c[2]), -np.cos(c[2])]))
     frame(ax, pts[3], c[2], 'ee', length=0.12)
 
     # joint angles: measured from the previous x axis (dashed extension) to the new one
@@ -62,7 +65,7 @@ def q1_figure():
     for i in range(3):
         m = (pts[i] + pts[i + 1]) / 2
         nrm = np.array([-np.sin(c[i]), np.cos(c[i])])
-        ax.text(*(m - 0.06 * nrm), f'$l_{i + 1}$', fontsize=14, ha='center', va='center', color='0.2')
+        ax.text(*(m - (0.09 if i == 2 else 0.06) * nrm), f'$l_{i + 1}$', fontsize=14, ha='center', va='center', color='0.2')
 
     ax.text(0.98, 0.02, r'$\odot$: all $z_i$ out of the page; gravity along $-z_0$.',
             transform=ax.transAxes, ha='right', fontsize=10)
@@ -129,16 +132,22 @@ def q4_figure():
     a2.set_ylim(-1.65, 1.)
     a2.set_title('(b) Closed-loop setpoint control', fontsize=12, loc='left')
     summ = summer(a2, (1.65, 0.))
-    gain = box(a2, (3.25, 0.), r'$K$', w=1.2)
-    pinv = box(a2, (5.5, 0.), r'$J^\dagger(\mathbf{q})$', w=1.4)
-    act = box(a2, (8.15, 0.), 'Actuator\ncontrol loop', w=1.7)
-    rob = box(a2, (10.95, 0.), 'Robot\n' r'$\mathbf{x}=f(\mathbf{q})$', w=1.7)
+    gain = box(a2, (3.0, 0.), r'$K$', w=1.0)
+    pinv = box(a2, (4.9, 0.), r'$J^\dagger(\mathbf{q})$', w=1.4)
+    summ_q = summer(a2, (6.6, 0.))
+    act = box(a2, (8.45, 0.), 'Actuator\ncontrol loop', w=1.7)
+    rob = box(a2, (11.2, 0.), 'Robot\n' r'$\mathbf{x}=f(\mathbf{q})$', w=1.7)
     arrow(a2, (0., 0.), summ['l'], r'$\mathbf{x}_{ref}$', sign='+')
     arrow(a2, summ['r'], gain['l'], r'$\mathbf{e}$')
     arrow(a2, gain['r'], pinv['l'], r'$\delta\mathbf{x}$')
-    arrow(a2, pinv['r'], act['l'], r'$\delta\mathbf{q}$')
+    arrow(a2, pinv['r'], summ_q['l'], r'$\delta\mathbf{q}$', sign='+')
+    arrow(a2, summ_q['r'], act['l'], r'$\mathbf{q}_{ref}$')
     arrow(a2, act['r'], rob['l'], r'$\mathbf{q}$')
     arrow(a2, rob['r'], (13., 0.), r'$\mathbf{x}$')
+    # measured joint angles: q_ref = q_meas + delta q
+    poly(a2, [(9.8, 0.), (9.8, -0.6), (6.6, -0.6), summ_q['b']])
+    a2.text(6.75, -0.45, '+', fontsize=11)
+    a2.text(8.2, -0.47, r'$\mathbf{q}_{meas}$', fontsize=10, ha='center')
     sensor = box(a2, (7.7, -1.2), 'Sensor', w=1.5, h=0.5, fc='#f2f2f2')
     poly(a2, [(12.5, 0.), (12.5, -1.2), sensor['r']])
     poly(a2, [sensor['l'], (1.65, -1.2), summ['b']])
@@ -167,8 +176,62 @@ def animation_snapshots():
                 elapsed_ms += duration_ms
 
 
+# ----------------------------------------------------------------------------- Q6
+def optimal_link_angles(p_xy, n=3600):
+    """Brute-force reference for Q6: over every ee orientation that reaches p_xy
+    (both elbow branches), the posture minimising wrap(q2)^2 + wrap(q3)^2.
+    Returns the two interior angles [rad]."""
+    th = np.linspace(-np.pi, np.pi, n, endpoint=False)
+    xw, yw = p_xy[0] - L[2] * np.cos(th), p_xy[1] - L[2] * np.sin(th)
+    c2 = (xw**2 + yw**2 - L[0]**2 - L[1]**2) / (2 * L[0] * L[1])
+    best, best_q = np.inf, None
+    for elbow in (1., -1.):
+        q2 = elbow * np.arccos(np.clip(c2, -1., 1.))
+        q1 = np.arctan2(yw, xw) - np.arctan2(L[1] * np.sin(q2), L[0] + L[1] * np.cos(q2))
+        q3 = th - q1 - q2
+        cost = wrap(q2)**2 + wrap(q3)**2
+        cost[np.abs(c2) > 1. + 1e-9] = np.inf
+        i = np.argmin(cost)
+        if cost[i] < best:
+            best, best_q = cost[i], (q2[i], q3[i])
+    return np.pi - np.abs(wrap(np.array(best_q)))
+
+
+def q6_link_angles():
+    """Interior angles of Q6 vs the brute-force optimum and the theta = 0 posture of Q5."""
+    q6 = np.load(os.path.join(OUT, 'q6_closed_loop.npz'))
+    q5 = np.load(os.path.join(OUT, 'q5_open_loop.npz'))
+    t = q6['t']
+    a6 = np.pi - np.abs(wrap(q6['q'][:, 1:]))
+    a5 = np.pi - np.abs(wrap(q5['q'][:, 1:]))
+    sub = np.arange(0, len(t), 24)
+    opt = np.array([optimal_link_angles(x[:2]) for x in q6['x_des'][sub]])
+
+    fig, ax = plt.subplots(figsize=(8, 3.8))
+    for j, color, name in [(0, 'tab:blue', r'$\alpha_{12}$'), (1, 'tab:orange', r'$\alpha_{23}$')]:
+        ax.plot(t, np.degrees(a6[:, j]), color=color, lw=2, label=f'{name}  Q6 nullspace')
+        ax.plot(t[sub], np.degrees(opt[:, j]), 'o', color=color, ms=3.5, mfc='none',
+                label=f'{name}  constrained optimum')
+        ax.plot(t, np.degrees(a5[:, j]), '--', color=color, lw=1, label=f'{name}  Q5 ($\\theta=0$)')
+    ax.set_xlabel('t [s]')
+    ax.set_ylabel('interior angle [deg]')
+    ax.set_ylim(0, 185)
+    ax.set_title('Angles between sequential links (180° = straight)')
+    ax.legend(fontsize=7.5, ncol=2, loc='lower left')
+    ax.grid(alpha=0.2)
+    fig.tight_layout()
+    fig.savefig(os.path.join(OUT, 'q6_link_angles.png'), dpi=150)
+    plt.close(fig)
+
+    gap = np.degrees(np.abs(a6[sub] - opt)).max(axis=0)
+    print(f'Q6 min interior angles: {np.degrees(a6.min(axis=0)).round(1)} deg; '
+          f'Q5 (theta = 0): {np.degrees(a5.min(axis=0)).round(1)} deg; '
+          f'max deviation from optimum: {gap.round(2)} deg')
+
+
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
     q1_figure()
     q4_figure()
     animation_snapshots()
+    q6_link_angles()
